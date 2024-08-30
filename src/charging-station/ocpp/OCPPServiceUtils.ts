@@ -297,6 +297,8 @@ export const convertDateToISOString = <T extends JsonType>(object: T): void => {
   }
 }
 
+const latestSOCStore: Record<string, number> = {}
+
 export const buildMeterValue = (
   chargingStation: ChargingStation,
   connectorId: number,
@@ -329,15 +331,27 @@ export const buildMeterValue = (
       if (socSampledValueTemplate != null) {
         const socMaximumValue = 100
         const socMinimumValue = socSampledValueTemplate.minimumValue ?? 0
-        const socSampledValueTemplateValue = isNotEmptyString(socSampledValueTemplate.value)
-          ? getRandomFloatFluctuatedRounded(
-            Number.parseInt(socSampledValueTemplate.value),
-            socSampledValueTemplate.fluctuationPercent ?? Constants.DEFAULT_FLUCTUATION_PERCENT
+
+        if (connector?.transactionId && latestSOCStore[connector.transactionId]) {
+          const nextSOC = Math.min(latestSOCStore[connector.transactionId] + 5, 100.0)
+
+          meterValue.sampledValue.push(buildSampledValue(socSampledValueTemplate, nextSOC))
+          latestSOCStore[connector.transactionId] = nextSOC
+        } else {
+          const socSampledValueTemplateValue = isNotEmptyString(socSampledValueTemplate.value)
+            ? getRandomFloatFluctuatedRounded(
+              Number.parseInt(socSampledValueTemplate.value),
+              socSampledValueTemplate.fluctuationPercent ?? Constants.DEFAULT_FLUCTUATION_PERCENT
+            )
+            : randomInt(socMinimumValue, socMaximumValue)
+          meterValue.sampledValue.push(
+            buildSampledValue(socSampledValueTemplate, socSampledValueTemplateValue)
           )
-          : randomInt(socMinimumValue, socMaximumValue)
-        meterValue.sampledValue.push(
-          buildSampledValue(socSampledValueTemplate, socSampledValueTemplateValue)
-        )
+          if (connector?.transactionId) {
+            latestSOCStore[connector.transactionId] = socSampledValueTemplateValue
+          }
+        }
+
         const sampledValuesIndex = meterValue.sampledValue.length - 1
         if (
           convertToInt(meterValue.sampledValue[sampledValuesIndex].value) > socMaximumValue ||
